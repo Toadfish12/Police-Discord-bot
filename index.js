@@ -1,181 +1,130 @@
 const botconfig = require("./botconfig.json");
+const tokenfile = require("./token.json");
 const Discord = require("discord.js");
 const fs = require("fs");
-const bot = new Discord.Client({disableEveryone:true})
+const bot = new Discord.Client();
+bot.commands = new Discord.Collection();
+let coins = require("./coins.json");
+let xp = require("./xp.json");
+let purple = botconfig.purple;
+let cooldown = new Set();
+let cdseconds = 5;
 
+fs.readdir("./commands/", (err, files) => {
 
+  if(err) console.log(err);
+  let jsfile = files.filter(f => f.split(".").pop() === "js");
+  if(jsfile.length <= 0){
+    console.log("Couldn't find commands.");
+    return;
+  }
 
-
-
-
-
-bot.on("ready",async () => {
-  console.log(`${bot.user.username} is online`);
-  bot.user.setActivity("Servers",{type:"watching"});
+  jsfile.forEach((f, i) =>{
+    let props = require(`./commands/${f}`);
+    console.log(`${f} loaded!`);
+    bot.commands.set(props.help.name, props);
+  });
 });
 
-bot.on("message",async message => {
+bot.on("ready", async () => {
+
+  console.log(`${bot.user.username} is online on ${bot.guilds.size} servers!`);
+  bot.user.setActivity("Servers", {type: "WATCHING"});
+
+});
+
+
+bot.on("message", async message => {
+
   if(message.author.bot) return;
   if(message.channel.type === "dm") return;
 
+  let prefixes = JSON.parse(fs.readFileSync("./prefixes.json", "utf8"));
+  if(!prefixes[message.guild.id]){
+    prefixes[message.guild.id] = {
+      prefixes: botconfig.prefix
+    };
+  }
+
+  if(!coins[message.author.id]){
+    coins[message.author.id] = {
+      coins: 0
+    };
+  }
+
+  let coinAmt = Math.floor(Math.random() * 15) + 1;
+  let baseAmt = Math.floor(Math.random() * 15) + 1;
+  console.log(`${coinAmt} ; ${baseAmt}`);
+
+  if(coinAmt === baseAmt){
+    coins[message.author.id] = {
+      coins: coins[message.author.id].coins + coinAmt
+    };
+  fs.writeFile("./coins.json", JSON.stringify(coins), (err) => {
+    if (err) console.log(err)
+  });
+  let coinEmbed = new Discord.RichEmbed()
+  .setAuthor(message.author.username)
+  .setColor("#0000FF")
+  .addField("💸", `${coinAmt} coins added!`);
+
+  message.channel.send(coinEmbed).then(msg => {msg.delete(5000)});
+  }
+
+  let xpAdd = Math.floor(Math.random() * 7) + 8;
+  console.log(xpAdd);
+
+  if(!xp[message.author.id]){
+    xp[message.author.id] = {
+      xp: 0,
+      level: 1
+    };
+  }
 
 
-  let prefix = botconfig.prefix
+  let curxp = xp[message.author.id].xp;
+  let curlvl = xp[message.author.id].level;
+  let nxtLvl = xp[message.author.id].level * 300;
+  xp[message.author.id].xp =  curxp + xpAdd;
+  if(nxtLvl <= xp[message.author.id].xp){
+    xp[message.author.id].level = curlvl + 1;
+    let lvlup = new Discord.RichEmbed()
+    .setTitle("Level Up!")
+    .setColor(purple)
+    .addField("New Level", curlvl + 1);
+
+    message.channel.send(lvlup).then(msg => {msg.delete(5000)});
+  }
+  fs.writeFile("./xp.json", JSON.stringify(xp), (err) => {
+    if(err) console.log(err)
+  });
+  let prefix = prefixes[message.guild.id].prefixes;
+  if(!message.content.startsWith(prefix)) return;
+  if(cooldown.has(message.author.id)){
+    message.delete();
+    return message.reply("You have to wait 5 seconds between commands.")
+  }
+  if(!message.member.hasPermission("ADMINISTRATOR")){
+    cooldown.add(message.author.id);
+  }
+
+
   let messageArray = message.content.split(" ");
   let cmd = messageArray[0];
   let args = messageArray.slice(1);
 
+  let commandfile = bot.commands.get(cmd.slice(prefix.length));
+  if(commandfile) commandfile.run(bot,message,args);
 
+  setTimeout(() => {
+    cooldown.delete(message.author.id)
+  }, cdseconds * 1000)
 
-  if(cmd === `${prefix}kick`){
-    if(command === "kick") {
-      // This command must be limited to mods and admins. In this example we just hardcode the role names.
-      // Please read on Array.some() to understand this bit: 
-      // https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/Array/some?
-      if(!message.member.roles.some(r=>["Administrator", "Moderator"].includes(r.name)) )
-        return message.reply("Sorry, you don't have permissions to use this!");
-      
-      // Let's first check if we have a member and if we can kick them!
-      // message.mentions.members is a collection of people that have been mentioned, as GuildMembers.
-      let member = message.mentions.members.first();
-      if(!member)
-        return message.reply("Please mention a valid member of this server");
-      if(!member.kickable) 
-        return message.reply("I cannot kick this user! Do they have a higher role? Do I have kick permissions?");
-      
-      // slice(1) removes the first part, which here should be the user mention!
-      let reason = args.slice(1).join(' ');
-      if(!reason)
-        return message.reply("Please indicate a reason for the kick!");
-      
-      // Now, time for a swift kick in the nuts!
-      await member.kick(reason)
-        .catch(error => message.reply(`Sorry ${message.author} I couldn't kick because of : ${error}`));
-      message.reply(`${member.user.tag} has been kicked by ${message.author.tag} because: ${reason}`);
-  
-    }
-}
- if(cmd ===`${prefix}say`){
-    // makes the bot say something and delete the message. As an example, it's open to anyone to use. 
-    // To get the "message" itself we join the `args` back into a string with spaces: 
-    const sayMessage = args.join(" ");
-    // Then we delete the command message (sneaky, right?). The catch just ignores the error with a cute smiley thing.
-    message.delete().catch(O_o=>{}); 
-    // And we get the bot to say the thing: 
-    message.channel.send(sayMessage);
-  }
-
-
-
- 
-  
-  if(cmd === `${prefix}ban`){
-    // Most of this command is identical to kick, except that here we'll only let admins do it.
-    // In the real world mods could ban too, but this is just an example, right? ;)
-    if(!message.member.roles.some(r=>["Administrator"].includes(r.name)) )
-      return message.reply("Sorry, you don't have permissions to use this!");
-    
-    let member = message.mentions.members.first();
-    if(!member)
-      return message.reply("Please mention a valid member of this server");
-    if(!member.bannable) 
-      return message.reply("I cannot ban this user! Do they have a higher role? Do I have ban permissions?");
-
-    let reason = args.slice(1).join(' ');
-    if(!reason)
-      return message.reply("Please indicate a reason for the ban!");
-    
-    await member.ban(reason)
-      .catch(error => message.reply(`Sorry ${message.author} I couldn't ban because of : ${error}`));
-    message.reply(`${member.user.tag} has been banned by ${message.author.tag} because: ${reason}`);
-  }
-    
-  
-  
-  
-
-
-
-
-
-    if(cmd === `${prefix}report`){
-    
-  
-  
-  let rUser = message.guild.member(message.mentions.users.first()||message.guild.members.get(args[0]));
-  if(!rUser) return message.channel.sendMessage("Couldn't find user");
-  let reason = args.join(" ").slice(22);
-
-  let reportEmbed = new Discord.RichEmbed()
-  .setDescription("Reports")
-  .setColor("#15f153")
-  .addField("Reported User",`${rUser} with ID: ${rUser.id}`)
-  .addField("Reported By",`${message.author} with ID: ${message.author.id}`)
-  .addField("Channel", message.channel)
-  .addField("Time", message.createdAt)
-  .addField("Reason",reason);
-  
-   let reportschannel = message.guild.channels.find(`name`,"reports");
-   if(!reportschannel) return message.channel.send("Couldn't find reports channel.");
-
-reportschannel.send(reportEmbed);
-
-     return; 
- }
- 
-   
-
-  if(cmd === `${prefix}ping`){
-    // Calculates ping between sending a message and editing it, giving a nice round-trip latency.
-    // The second ping is an average latency between the bot and the websocket server (one-way, not round-trip)
-    const m = await message.channel.send("Ping");
-    m.edit(`**Pong! Latency is ${m.createdTimestamp - message.createdTimestamp}ms. API Latency is ${Math.round(bot.ping)}ms**`);
-  }
-
- 
- 
- 
- if(cmd === `${prefix}serverinfo`){
- 
-   let sicon = message.guild.displayAvatarURL;
-  let serverembed = new Discord.RichEmbed()
-  .setDescription("Server Information")
-  .setColor("#14f153")
-  .setThumbnail(sicon)
-  .addField("Server Name", message.guild.name)
-  .addField("Created On", message.guild.createdAt)
-  .addField("You Joined", message.member.joinedAt)
-  .addField("Total Members", message.guild.memberCount);
-
-  return message.channel.send(serverembed);
- 
- }
-  
- 
- 
- 
- 
- 
- 
- 
- 
- 
- let bicon = bot.user.displayAvatarURL;
-  if (cmd === `${prefix}botinfo`){
-    let botembed = new Discord.RichEmbed()
-    .setDescription("Bot Information")
-    .setColor("#15f153")
-    .setThumbnail(bicon)
-    .addField("Bot Name", bot.user.username)
-    .addField("Created On",bot.user.createdAt);
-     
-    return message.channel.send(botembed);
+   if(msg.includes('CHOW MEOW MEOW')) {
+     message.delete();
+     message.author.send('The word **CHOW MEOW MEOW** Has been blacklisted in the bots code by the owner so please do not use this word!');
    }
-
-
-
-
 
 });
 
-bot.login(botconfig.token);
+bot.login(tokenfile.token);
